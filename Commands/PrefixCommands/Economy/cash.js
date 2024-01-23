@@ -14,7 +14,6 @@ class CashCommand extends commandBuilder {
       permissions: [] // quyền hạn khi sử dụng lệnh
     });
     // console.log(super.toJSON()); // xuất ra thông tin dưới dạng json
-    super.executeCommand((options) => this.run(options)); // Thiết lập hàm xử lý khi lệnh được thực thi.
   };
   /** 
    * @Info - Thực hiện lệnh khi được yêu cầu
@@ -23,7 +22,7 @@ class CashCommand extends commandBuilder {
    * @info args: Mảng chứa các đối số được truyền vào lệnh, thường được sử dụng để xử lý thêm thông tin từ người dùng.
    * @info prefix: Tiền tố được sử dụng để kích hoạt lệnh, giúp bot nhận biết khi nào người dùng muốn sử dụng lệnh.
    */
-  async run({ client, message, args, prefix }) {
+  async executeCommand({ client, message, args, prefix }) {
     const user = message.mentions.users.first() || message.author;
     let result = await client.cs.balance({
       user: user,
