@@ -17,12 +17,12 @@ export default class Client extends Discord.Client {
     // bảng điều khiển tùy chỉnh lệnh
     this.setEventHandler(options.commandHandler);
     // khởi chạy bot
-    if(!this.config.botToken) {
+    if (!this.config.botToken) {
       console.error(chalk.blue("[BlackCat.JS]: ") + chalk.red("Bạn chưa set token cho bot"));
     } else this.login(this.config.botToken);
   };
   // thiết lập sự kiện
-  async setEventHandler(options) { 
+  async setEventHandler(options) {
     // Khởi tạo một Discord.Collection để lưu trữ slash commands.
     this.slashCommands = new Discord.Collection();
     // Khởi tạo một Discord Collection để quản lý cooldown của lệnh.
@@ -34,55 +34,62 @@ export default class Client extends Discord.Client {
     // đặt ngôn ngữ hiện tại của package
     this.currentLanguage = options.setCurrentLanguage;
     // sử dụng command prefix
-    if(options.prefixCommand) {
+    if (options.prefixCommand) {
       const pathToCommand = options.pathToCommand;
       // Sử dụng fs.readdirSync để đọc danh sách thư mục trong đường dẫn và áp dụng map để duyệt qua từng thư mục.
-      await Promise.all(fs.readdirSync(pathToCommand.prefixCommand).map(async(dir) => {
+      await Promise.all(fs.readdirSync(pathToCommand.prefixCommand).map(async (dir) => {
         // Đọc danh sách tệp tin trong mỗi thư mục và lọc ra các tệp có đuôi là ".js".
         const commands = fs.readdirSync(`${pathToCommand.prefixCommand}/${dir}/`).filter((file) => file.endsWith(".js"));
         for (let file of commands) {
           // Dùng import để đọc nội dung của mỗi tệp và thiết lập lệnh từ thuộc tính default.
-          const command = await import(this.globalFilePath(`${pathToCommand.prefixCommand}/${dir}/${file}`)).then((x) => x.default);
+          const CommandBuilder = await import(this.globalFilePath(`${pathToCommand.prefixCommand}/${dir}/${file}`)).then((x) => x.default);
           // Nếu lệnh có tên (pull.name), thêm vào this.commands được khai báo thì sẽ in ra commandTable với trạng thái "✔️ sẵn sàng".
-          if (command.name) {
+          if (typeof CommandBuilder === "function" && CommandBuilder instanceof Function && CommandBuilder.toString().startsWith("class")) {
+            const command = new CommandBuilder();
             this.commands.set(command.name, command);
-          } else { // Nếu không có tên, thêm vào commandTable với trạng thái "❌ Lỗi".
+            // Nếu có bí danh (command.aliases), thêm mỗi bí danh vào this.aliases.
+            if (command.aliases && Array.isArray(command.aliases)) {
+              command.aliases.forEach((alias) => this.aliases.set(alias, command.name));
+            };
+          } else if (CommandBuilder.name) {
+            this.commands.set(CommandBuilder.name, CommandBuilder);
+            // Nếu có bí danh (CommandBuilder.aliases), thêm mỗi bí danh vào this.aliases.
+            if (CommandBuilder.aliases && Array.isArray(CommandBuilder.aliases)) {
+              CommandBuilder.aliases.forEach((alias) => this.aliases.set(alias, CommandBuilder.name));
+            };
+          } else {
             return;
-          };
-          // Nếu có bí danh (pull.aliases), thêm mỗi bí danh vào this.aliases.
-          if (command.aliases && Array.isArray(command.aliases)) {
-            command.aliases.forEach((alias) => this.aliases.set(alias, command.name));
           };
         };
       }));
       // khởi chạy sự kiện message
-      this.on(Discord.Events.MessageCreate, async(message) => await this.MessageCreate({
-        message: message, 
-        prefix: this.config.botPrefix 
+      this.on(Discord.Events.MessageCreate, async (message) => await this.MessageCreate({
+        message: message,
+        prefix: this.config.botPrefix
       }));
     };
-    if(options.slashCommand) {
+    if (options.slashCommand) {
       const pathToCommand = options.pathToCommand;
       const allSlashCommands = []; // Khởi tạo một mảng để lưu trữ tất cả thông tin về slashCommands (allSlashCommands).
       // Lặp qua từng thư mục trong thư mục slashCommands và xử lý từng file.
       for (const dir of fs.readdirSync(pathToCommand.slashCommand)) {
         const filterCommands = fs.readdirSync(`${pathToCommand.slashCommand}/${dir}/`).filter((file) => file.endsWith(".js"));
         for (const slashCmds of filterCommands) {
-           try {
-              const command = await import(this.globalFilePath(`${slashPath}/${dir}/${slashCmds}`)).then((e) => e.default); // Trong vòng lặp bên trong, thử import từng file slash command và xử lý nếu không có lỗi.
-              this.slashCommands.set(command.name, command); // this.slashCommands: Một Collection để lưu trữ các slash commands của bot.
-              allSlashCommands.push({ // allSlashCommands: Một mảng để lưu trữ thông tin về tất cả các slash commands.
-                name: command.name.toLowerCase(),
-                description: command.description,
-                type: command.type || "",
-                options: command.options || null,
-              });
-           } catch (error) {
-              console.error(this.getLocalizedString("commandHander.slash.cmd5", {
-                slashCmds: slashCmds,
-                slashCmds1: error.message
-              }));
-           };
+          try {
+            const command = await import(this.globalFilePath(`${slashPath}/${dir}/${slashCmds}`)).then((e) => e.default); // Trong vòng lặp bên trong, thử import từng file slash command và xử lý nếu không có lỗi.
+            this.slashCommands.set(command.name, command); // this.slashCommands: Một Collection để lưu trữ các slash commands của bot.
+            allSlashCommands.push({ // allSlashCommands: Một mảng để lưu trữ thông tin về tất cả các slash commands.
+              name: command.name.toLowerCase(),
+              description: command.description,
+              type: command.type || "",
+              options: command.options || null,
+            });
+          } catch (error) {
+            console.error(this.getLocalizedString("commandHander.slash.cmd5", {
+              slashCmds: slashCmds,
+              slashCmds1: error.message
+            }));
+          };
         };
       };
       this.on(Discord.Events.ClientReady, async (bot) => {
@@ -108,18 +115,21 @@ export default class Client extends Discord.Client {
       if (command) {
         const embed = new Discord.EmbedBuilder().setTitle(this.getLocalizedString("commandHander.prefix.mes1")).setColor("Random"); // Tạo một đối tượng embed để tạo thông báo nhúng (embedded message) với tiêu đề "Thiếu quyền" và màu ngẫu nhiên.
         // Nếu lệnh yêu cầu quyền hạn (command.permissions) và người dùng không có đủ quyền, bot sẽ gửi một thông báo nhúng thông báo về việc thiếu quyền.
-        if (command.permissions && !message.member.permissions.has(Discord.PermissionsBitField.resolve(command.permissions || []))) return message.reply({ embeds: [embed.setDescription(this.getLocalizedString("commandHander.prefix.mes2", {
+        if (command.permissions && !message.member.permissions.has(Discord.PermissionsBitField.resolve(command.permissions || []))) return message.reply({
+          embeds: [embed.setDescription(this.getLocalizedString("commandHander.prefix.mes2", {
             permissions: command.permissions
           }))],
         });
         // Nếu người dùng đang trong thời gian cooldown cho lệnh, bot sẽ gửi một thông báo về việc đợi để sử dụng lệnh lại sau một khoảng thời gian.
-        if (onCooldown(this.cooldowns, message, command)) return message.reply({ content: this.getLocalizedString("commandHander.prefix.mes3", {
+        if (onCooldown(this.cooldowns, message, command)) return message.reply({
+          content: this.getLocalizedString("commandHander.prefix.mes3", {
             timestamp: onCooldown(this.cooldowns, message, command).toFixed(),
             cmdName: command.name
           }),
         });
         // Nếu lệnh chỉ dành cho chủ sở hữu (command.owner) và người gửi lệnh không phải là chủ sở hữu, bot sẽ gửi một thông báo về việc chỉ chủ sở hữu mới có thể sử dụng lệnh này.
-        if (command.owner && message.author.id !== this.config.developer) return message.reply({ embeds: [embed.setDescription(this.getLocalizedString("commandHander.prefix.mes4", {
+        if (command.owner && message.author.id !== this.config.developer) return message.reply({
+          embeds: [embed.setDescription(this.getLocalizedString("commandHander.prefix.mes4", {
             developer: this.config.developer
           }))],
         });
@@ -129,9 +139,11 @@ export default class Client extends Discord.Client {
         setTimeout(() => msg.delete(), ms("5s")); // tự động xóa sau 5 giây
       });
     } else { // Kiểm tra nếu bot được mention trong tin nhắn
-      if (message.mentions.users.has(this.user.id)) return message.reply({ content: this.getLocalizedString("commandHander.prefix.mes6", { 
-        prefix: prefix
-      })});
+      if (message.mentions.users.has(this.user.id)) return message.reply({
+        content: this.getLocalizedString("commandHander.prefix.mes6", {
+          prefix: prefix
+        })
+      });
     };
     // thời gian hồi lệnh
     function onCooldown(cooldowns, botMessage, commands) {
@@ -156,30 +168,30 @@ export default class Client extends Discord.Client {
       const SlashCommands = this.slashCommands.get(interaction.commandName);
       if (!SlashCommands) return;
       if (SlashCommands) {
-        try {                           
+        try {
           const embed = new Discord.EmbedBuilder().setTitle(this.getLocalizedString("commandHander.slash.slash1")).setColor("Random");
 
-                            if (SlashCommands.owner && this.config.developer.includes(interaction.user.id)) return interaction.reply({
-                                content: this.getLocalizedString("commandHander.slash.slash2")
-                            });
-                            if (SlashCommands.userPerms && !interaction.member.permissions.has(Discord.PermissionsBitField.resolve(SlashCommands.userPerms || []))) return interaction.reply({
-                                embeds: [embed.setDescription(this.getLocalizedString("commandHander.slash.slash3", {
-                                    cmd1: SlashCommands.userPerms,
-                                    cmd2: interaction.channelId,
-                                    cmd3: SlashCommands.name
-                                }))]
-                            });
+          if (SlashCommands.owner && this.config.developer.includes(interaction.user.id)) return interaction.reply({
+            content: this.getLocalizedString("commandHander.slash.slash2")
+          });
+          if (SlashCommands.userPerms && !interaction.member.permissions.has(Discord.PermissionsBitField.resolve(SlashCommands.userPerms || []))) return interaction.reply({
+            embeds: [embed.setDescription(this.getLocalizedString("commandHander.slash.slash3", {
+              cmd1: SlashCommands.userPerms,
+              cmd2: interaction.channelId,
+              cmd3: SlashCommands.name
+            }))]
+          });
 
-                            SlashCommands.run(this, interaction);
-                        } catch (error) {
-                            if (interaction.replied) return await interaction.editReply({
-                                embeds: [new Discord.EmbedBuilder().setDescription(this.getLocalizedString("commandHander.slash.slash4"))],
-                                ephemeral: true,
-                            });
-                            console.log(error);
-                        };
-                    };
-                };
+          SlashCommands.run(this, interaction);
+        } catch (error) {
+          if (interaction.replied) return await interaction.editReply({
+            embeds: [new Discord.EmbedBuilder().setDescription(this.getLocalizedString("commandHander.slash.slash4"))],
+            ephemeral: true,
+          });
+          console.log(error);
+        };
+      };
+    };
   };
   /**
    * @info Chuyển đổi đường dẫn tệp thành URL toàn cầu (global URL) sử dụng pathToFileURL của Node.js.
@@ -188,7 +200,7 @@ export default class Client extends Discord.Client {
    */
   globalFilePath(path) {
     return nodeUrl.pathToFileURL(path).href || path; // Sử dụng pathToFileURL của Node.js để chuyển đổi đường dẫn thành URL. Nếu thành công, trả về href của URL; nếu không, trả về đường dẫn ban đầu.
-  }; 
+  };
   /**
    * @info Hàm `getLocalizedString` dùng để lấy chuỗi dịch dựa trên khóa và thực hiện thay thế giá trị nếu cần.
    * @param {string} key Khóa để xác định chuỗi cần lấy.
@@ -198,70 +210,70 @@ export default class Client extends Discord.Client {
   getLocalizedString(key, replacements) {
     // Đối tượng chứa các chuỗi cho từng ngôn ngữ
     let languageStrings = {
-            "en": {
-                tokenBot: "You haven't added a token for the bot yet",
-                commandHander: {
-                    prefix: {
-                        // command table (commandTable)
-                        cmd1: "Command Name",
-                        cmd2: "Status",
-                        cmd3: "✔️ Ready",
-                        cmd4: "❌ Error",
-                        // messages in messageCreate
-                        mes1: "Missing permissions",
-                        mes2: "You don't have the {permissions} permission to use this command",
-                        mes3: "❌ You've used the command too quickly. Please wait {timestamp} seconds before using `{cmdName}` again",
-                        mes4: "You can't use this command. Only <@{developer}> can use it",
-                        mes5: "Invalid command. Type {prefix}help to review all commands",
-                        mes6: "Hello. My prefix is: {prefix}",
-                    },
-                    slash: {
-                        // command table (slashTable) 
-                        cmd1: "Command Name",
-                        cmd2: "Status",
-                        cmd3: "❌ Error",
-                        cmd4: "✔️ Ready",
-                        cmd5: "Error inputting {slashCmds}: {slashCmds1}",
-                        // messages in interaction 
-                        slash1: "Missing permissions to use the command",
-                        slash2: "I'm not a foolish bot, only the owner can use this command",
-                        slash3: "Sorry, you don't have the {cmd1} permission in <#{cmd2}> to use the {cmd3} command",
-                        slash4: "An error occurred while executing the command. Apologies for the inconvenience <3",
-                    }
-                }
-            }, // tiếng anh 
-            "vi": {
-                tokenBot: "Bạn vẫn chưa thêm token cho bot",
-                commandHander: {
-                    prefix: {
-                        // bảng điều khiển (commandTable)
-                        cmd1: "Tên Lệnh",
-                        cmd2: "Trạng thái",
-                        cmd3: "✔️ sẵn sàng",
-                        cmd4: "❌ Lỗi",
-                        // tin nhắn trong messageCreate
-                        mes1: "Thiếu quyền",
-                        mes2: "Bạn không có quyền {permissions} để sử dụng lệnh này",
-                        mes3: "❌ Bạn đã sử dụng lệnh quá nhanh vui lòng đợi {timestamp} giây trước khi sử dụng lại `{cmdName}`",
-                        mes4: "Bạn không thể sử dụng lệnh này chỉ có <@{developer}> mới có thể sử dụng",
-                        mes5: "Sai lệnh. nhập {prefix}help để xem lại tất cả các lệnh",
-                        mes6: "Xin chào. prefix của tôi là: {prefix}",
-                    },
-                    slash: {
-                        // bảng điều khiển (slashTable) 
-                        cmd1: "Tên Lệnh",
-                        cmd2: "Trạng thái",
-                        cmd3: "❌ Lỗi",
-                        cmd4: "✔️ sẵn sàng",
-                        cmd5: "Lỗi nhập {slashCmds}: {slashCmds1}",
-                        // tin nhắn trong interaction 
-                        slash1: "Thiếu quyền sử dụng lệnh",
-                        slash2: "Tôi, không phải là bot ngu ngốc, chỉ chủ sở hữu mới có thể sử dụng lệnh này",
-                        slash3: "Xin lỗi, bạn không có quyền {cmd1} trong <#{cmd2}> để sử dụng lệnh {cmd3} này",
-                        slash4: "Đã xảy ra lỗi khi thực hiện lệnh, xin lỗi vì sự bất tiện <3",
-                    }
-                }
-            }, // tiếng việt
+      "en": {
+        tokenBot: "You haven't added a token for the bot yet",
+        commandHander: {
+          prefix: {
+            // command table (commandTable)
+            cmd1: "Command Name",
+            cmd2: "Status",
+            cmd3: "✔️ Ready",
+            cmd4: "❌ Error",
+            // messages in messageCreate
+            mes1: "Missing permissions",
+            mes2: "You don't have the {permissions} permission to use this command",
+            mes3: "❌ You've used the command too quickly. Please wait {timestamp} seconds before using `{cmdName}` again",
+            mes4: "You can't use this command. Only <@{developer}> can use it",
+            mes5: "Invalid command. Type {prefix}help to review all commands",
+            mes6: "Hello. My prefix is: {prefix}",
+          },
+          slash: {
+            // command table (slashTable) 
+            cmd1: "Command Name",
+            cmd2: "Status",
+            cmd3: "❌ Error",
+            cmd4: "✔️ Ready",
+            cmd5: "Error inputting {slashCmds}: {slashCmds1}",
+            // messages in interaction 
+            slash1: "Missing permissions to use the command",
+            slash2: "I'm not a foolish bot, only the owner can use this command",
+            slash3: "Sorry, you don't have the {cmd1} permission in <#{cmd2}> to use the {cmd3} command",
+            slash4: "An error occurred while executing the command. Apologies for the inconvenience <3",
+          }
+        }
+      }, // tiếng anh 
+      "vi": {
+        tokenBot: "Bạn vẫn chưa thêm token cho bot",
+        commandHander: {
+          prefix: {
+            // bảng điều khiển (commandTable)
+            cmd1: "Tên Lệnh",
+            cmd2: "Trạng thái",
+            cmd3: "✔️ sẵn sàng",
+            cmd4: "❌ Lỗi",
+            // tin nhắn trong messageCreate
+            mes1: "Thiếu quyền",
+            mes2: "Bạn không có quyền {permissions} để sử dụng lệnh này",
+            mes3: "❌ Bạn đã sử dụng lệnh quá nhanh vui lòng đợi {timestamp} giây trước khi sử dụng lại `{cmdName}`",
+            mes4: "Bạn không thể sử dụng lệnh này chỉ có <@{developer}> mới có thể sử dụng",
+            mes5: "Sai lệnh. nhập {prefix}help để xem lại tất cả các lệnh",
+            mes6: "Xin chào. prefix của tôi là: {prefix}",
+          },
+          slash: {
+            // bảng điều khiển (slashTable) 
+            cmd1: "Tên Lệnh",
+            cmd2: "Trạng thái",
+            cmd3: "❌ Lỗi",
+            cmd4: "✔️ sẵn sàng",
+            cmd5: "Lỗi nhập {slashCmds}: {slashCmds1}",
+            // tin nhắn trong interaction 
+            slash1: "Thiếu quyền sử dụng lệnh",
+            slash2: "Tôi, không phải là bot ngu ngốc, chỉ chủ sở hữu mới có thể sử dụng lệnh này",
+            slash3: "Xin lỗi, bạn không có quyền {cmd1} trong <#{cmd2}> để sử dụng lệnh {cmd3} này",
+            slash4: "Đã xảy ra lỗi khi thực hiện lệnh, xin lỗi vì sự bất tiện <3",
+          }
+        }
+      }, // tiếng việt
     };
     // Truy cập đệ quy vào đối tượng ngôn ngữ
     let currentObj = languageStrings[this.currentLanguage];
@@ -295,8 +307,8 @@ export class CommandBuilder {
       this.executeCommand = executeCommand;
     } else return;
   };
-  
+
   toJSON() {
-    return {...this};
-  }
+    return { ...this };
+  };
 };

@@ -1,9 +1,10 @@
-import { commandBuilder as CommandBuilder, getFileNameAndFolder, } from "blackcat.js";
+import { commandBuilder as CommandBuilder, getFileNameAndFolder, ms } from "blackcat.js";
 import { EmbedBuilders } from "../../../Handlers/functions.js";
 import ytdl from "@distube/ytdl-core";
 const cmdName = getFileNameAndFolder(import.meta.url);
+const { getInfo } = ytdl;
 
-class PingCommand extends CommandBuilder {
+export default class PingCommand extends CommandBuilder {
   constructor() {
     super({
       name: cmdName.fileName.name, // Tên Lệnh chính
@@ -16,7 +17,7 @@ class PingCommand extends CommandBuilder {
       permissions: [], // quyền hạn khi sử dụng lệnh
     });
     // console.log(super.toJSON()); // xuất ra thông tin dưới dạng json
-  }
+  };
   /**
    * @Info - Thực hiện lệnh khi được yêu cầu
    * @info client: Đại diện cho đối tượng Discord.Client, thường được sử dụng để tương tác với API Discord.
@@ -25,24 +26,43 @@ class PingCommand extends CommandBuilder {
    * @info prefix: Tiền tố được sử dụng để kích hoạt lệnh, giúp bot nhận biết khi nào người dùng muốn sử dụng lệnh.
    */
   async executeCommand({ client, message, args, prefix }) {
-    const { getInfo } = ytdl;
-    const songname = args.slice(0).join(" ");
-    const song = await client.distube.search(songname);
+    const song = await client.distube.search(args.slice(0).join(" "));
     const data = await getInfo(song[0].url).then((info) => info.videoDetails);
-    return message.reply({
-      embeds: [
-        new EmbedBuilders({
-          images: data.thumbnails[0].url,
-        }),
-        new EmbedBuilders({
-          title: { name: `Thông tin bài hát: ${data.title}`, url: data.video_url },
-          description: data.description,
-          timestamp: Date.now(),
-          colors: "Random"
-        })
-      ],
+    // chuyển đổi thời gian sang múi giờ việt nam
+    const inputTime = new Date(data.uploadDate);
+    const vietnamTime = inputTime.toLocaleString("vi-VN", {
+      timeZone: "Asia/Ho_Chi_Minh"
     });
-  }
-}
+    // Chuyển đổi từ tổng số giây sang phút và giây
+    const minutes = Math.floor(data.lengthSeconds / 60); // Lấy số phút
+    const remainingSeconds = data.lengthSeconds % 60; // Lấy số giây còn lại
+    const formattedMinutes = minutes.toString().padStart(2, '0'); // Dùng padStart để thêm số 0 vào đầu chuỗi nếu cần thiết
+    const formattedSeconds = remainingSeconds.toString().padStart(2, '0'); // Dùng padStart để thêm số 0 vào đầu chuỗi nếu cần thiết
+    // trả về nội dung chinh
+    const msg = await message.reply({
+      content: "Đang lấy thông tin của bài hát....",
+      embeds: [],
+    });
 
-export default new PingCommand();
+    setTimeout(() => {
+      msg.edit({
+        content: "",
+        embeds: [new EmbedBuilders({
+          author: { name: `Tên bài hát: ${data.title}`, iconURL: data.thumbnails[4].url },
+          title: { name: `Link bài hát`, url: data.video_url },
+          footer: { text: message.author.username },
+          images: data.thumbnails[4].url,
+          timestamp: Date.now(),
+          colors: "Random",
+          fields: [
+            { name: "Chủ sở hữu:", value: `${data.author.name} (${data.author.user})` },
+            { name: "Thời gian", value: `${formattedMinutes}:${formattedSeconds}` },
+            { name: "Phát hành lúc:", value: `${vietnamTime}` },
+            { name: "Thể loại:", value: `${data.category}` },
+            { name: "key-words:", value: `${data.keywords.join("\n")}` }
+          ],
+        })],
+      })
+    }, ms("2s"));
+  };
+};
