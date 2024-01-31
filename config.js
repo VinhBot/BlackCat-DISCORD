@@ -1,5 +1,5 @@
 const config = {
-  botToken: process.env.token || "ODc4ODczNzgwNTk0ODM1NDc2.GLbgxF.-RMk6p4U8cjN-nAYx0gYILQa5_fO6CKUtlXtEU",
+  botToken: process.env.token || "token của bot",
   botPrefix: process.env.prefix || "!",
   developer: process.env.developer || "788208207465938954",
   mongourl: process.env.mongourl || "mongodb+srv://BlackCat-Club:blackcat2k3@blackcat-club.sfgyw.mongodb.net/BlackCat-Discord",

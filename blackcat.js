@@ -10,7 +10,7 @@ export default class Client extends Discord.Client {
         repliedUser: false,
       },
       partials: [Object.keys(Discord.Partials)],
-      intents: ["Guilds", "GuildMessages", "MessageContent", "GuildMembers"],
+      intents: ["Guilds", "GuildMessages", "MessageContent", "GuildMembers", "GuildVoiceStates"],
     });
     // Các tùy chọn cấu hình config.
     this.config = options.config;
@@ -18,10 +18,10 @@ export default class Client extends Discord.Client {
     this.setEventHandler(options.commandHandler);
     // khởi chạy bot
     if(!this.config.botToken) {
-      console.error("Bạn chưa set token cho bot");
+      console.error(chalk.blue("[BlackCat.JS]: ") + chalk.red("Bạn chưa set token cho bot"));
     } else this.login(this.config.botToken);
   };
-  // 
+  // thiết lập sự kiện
   async setEventHandler(options) { 
     // Khởi tạo một Discord.Collection để lưu trữ slash commands.
     this.slashCommands = new Discord.Collection();
@@ -55,7 +55,7 @@ export default class Client extends Discord.Client {
           };
         };
       }));
-      // 
+      // khởi chạy sự kiện message
       this.on(Discord.Events.MessageCreate, async(message) => await this.MessageCreate({
         message: message, 
         prefix: this.config.botPrefix 
@@ -63,7 +63,34 @@ export default class Client extends Discord.Client {
     };
     if(options.slashCommand) {
       const pathToCommand = options.pathToCommand;
-      console.log(pathToCommand.slashCommand);
+      const allSlashCommands = []; // Khởi tạo một mảng để lưu trữ tất cả thông tin về slashCommands (allSlashCommands).
+      // Lặp qua từng thư mục trong thư mục slashCommands và xử lý từng file.
+      for (const dir of fs.readdirSync(pathToCommand.slashCommand)) {
+        const filterCommands = fs.readdirSync(`${pathToCommand.slashCommand}/${dir}/`).filter((file) => file.endsWith(".js"));
+        for (const slashCmds of filterCommands) {
+           try {
+              const command = await import(this.globalFilePath(`${slashPath}/${dir}/${slashCmds}`)).then((e) => e.default); // Trong vòng lặp bên trong, thử import từng file slash command và xử lý nếu không có lỗi.
+              this.slashCommands.set(command.name, command); // this.slashCommands: Một Collection để lưu trữ các slash commands của bot.
+              allSlashCommands.push({ // allSlashCommands: Một mảng để lưu trữ thông tin về tất cả các slash commands.
+                name: command.name.toLowerCase(),
+                description: command.description,
+                type: command.type || "",
+                options: command.options || null,
+              });
+           } catch (error) {
+              console.error(this.getLocalizedString("commandHander.slash.cmd5", {
+                slashCmds: slashCmds,
+                slashCmds1: error.message
+              }));
+           };
+        };
+      };
+      this.on(Discord.Events.ClientReady, async (bot) => {
+        const rest = new Discord.REST({ version: "10" }).setToken(this.config.tokenBot);
+        return await rest.put(Discord.Routes.applicationCommands(bot.user.id), {
+          body: allSlashCommands
+        });
+      });
       this.on(Discord.Events.InteractionCreate, (interaction) => this.InteractionCreate({
         interaction: interaction
       }));
@@ -79,6 +106,24 @@ export default class Client extends Discord.Client {
       let command = this.commands.get(commands); // Lấy lệnh từ một bộ sưu tập (presumably Map) của các lệnh sử dụng tên lệnh.
       if (!command) command = this.commands.get(this.aliases.get(commands)); // Nếu không tìm thấy lệnh trực tiếp bằng tên, kiểm tra xem có lệnh nào có bí danh (alias) giống với tên lệnh không.
       if (command) {
+        const embed = new Discord.EmbedBuilder().setTitle(this.getLocalizedString("commandHander.prefix.mes1")).setColor("Random"); // Tạo một đối tượng embed để tạo thông báo nhúng (embedded message) với tiêu đề "Thiếu quyền" và màu ngẫu nhiên.
+        // Nếu lệnh yêu cầu quyền hạn (command.permissions) và người dùng không có đủ quyền, bot sẽ gửi một thông báo nhúng thông báo về việc thiếu quyền.
+        if (command.permissions && !message.member.permissions.has(Discord.PermissionsBitField.resolve(command.permissions || []))) return message.reply({ embeds: [embed.setDescription(this.getLocalizedString("commandHander.prefix.mes2", {
+            permissions: command.permissions
+          }))],
+        });
+        // Nếu người dùng đang trong thời gian cooldown cho lệnh, bot sẽ gửi một thông báo về việc đợi để sử dụng lệnh lại sau một khoảng thời gian.
+        if (onCooldown(this.cooldowns, message, command)) return message.reply({ content: this.getLocalizedString("commandHander.prefix.mes3", {
+            timestamp: onCooldown(this.cooldowns, message, command).toFixed(),
+            cmdName: command.name
+          }),
+        });
+        // Nếu lệnh chỉ dành cho chủ sở hữu (command.owner) và người gửi lệnh không phải là chủ sở hữu, bot sẽ gửi một thông báo về việc chỉ chủ sở hữu mới có thể sử dụng lệnh này.
+        if (command.owner && message.author.id !== this.config.developer) return message.reply({ embeds: [embed.setDescription(this.getLocalizedString("commandHander.prefix.mes4", {
+            developer: this.config.developer
+          }))],
+        });
+        // Nếu tìm thấy lệnh, thực thi lệnh đó bằng cách gọi hàm command.executeCommand và truyền vào các đối số như this (đối tượng bot cách gọi khác là client), message (đối tượng tin nhắn), args (mảng tham số), và prefix (tiền tố của lệnh).
         command.executeCommand({ client: this, message, args });
       } else return message.reply({ content: this.getLocalizedString("commandHander.prefix.mes5", { prefix: prefix }) }).then((msg) => {
         setTimeout(() => msg.delete(), ms("5s")); // tự động xóa sau 5 giây
@@ -88,6 +133,7 @@ export default class Client extends Discord.Client {
         prefix: prefix
       })});
     };
+    // thời gian hồi lệnh
     function onCooldown(cooldowns, botMessage, commands) {
       if (!botMessage || !commands) return;
       const timestamps = cooldowns.get(commands.name) || cooldowns.set(commands.name, new Discord.Collection()).get(commands.name);
@@ -103,9 +149,37 @@ export default class Client extends Discord.Client {
       return false;
     };
   };
-  //
-  InteractionCreate({ interaction }) {
-    console.log("InteractionCreate");
+  // 
+  async InteractionCreate({ interaction }) {
+    if (interaction.type === Discord.InteractionType.ApplicationCommand) {
+      if (!this.slashCommands.has(interaction.commandName) || interaction.user.bot || !interaction.guild) return;
+      const SlashCommands = this.slashCommands.get(interaction.commandName);
+      if (!SlashCommands) return;
+      if (SlashCommands) {
+        try {                           
+          const embed = new Discord.EmbedBuilder().setTitle(this.getLocalizedString("commandHander.slash.slash1")).setColor("Random");
+
+                            if (SlashCommands.owner && this.config.developer.includes(interaction.user.id)) return interaction.reply({
+                                content: this.getLocalizedString("commandHander.slash.slash2")
+                            });
+                            if (SlashCommands.userPerms && !interaction.member.permissions.has(Discord.PermissionsBitField.resolve(SlashCommands.userPerms || []))) return interaction.reply({
+                                embeds: [embed.setDescription(this.getLocalizedString("commandHander.slash.slash3", {
+                                    cmd1: SlashCommands.userPerms,
+                                    cmd2: interaction.channelId,
+                                    cmd3: SlashCommands.name
+                                }))]
+                            });
+
+                            SlashCommands.run(this, interaction);
+                        } catch (error) {
+                            if (interaction.replied) return await interaction.editReply({
+                                embeds: [new Discord.EmbedBuilder().setDescription(this.getLocalizedString("commandHander.slash.slash4"))],
+                                ephemeral: true,
+                            });
+                            console.log(error);
+                        };
+                    };
+                };
   };
   /**
    * @info Chuyển đổi đường dẫn tệp thành URL toàn cầu (global URL) sử dụng pathToFileURL của Node.js.
@@ -113,8 +187,7 @@ export default class Client extends Discord.Client {
    * @returns {string} URL toàn cầu hoặc đường dẫn ban đầu nếu chuyển đổi không thành công.
    */
   globalFilePath(path) {
-    // Sử dụng pathToFileURL của Node.js để chuyển đổi đường dẫn thành URL. Nếu thành công, trả về href của URL; nếu không, trả về đường dẫn ban đầu.
-    return nodeUrl.pathToFileURL(path).href || path;
+    return nodeUrl.pathToFileURL(path).href || path; // Sử dụng pathToFileURL của Node.js để chuyển đổi đường dẫn thành URL. Nếu thành công, trả về href của URL; nếu không, trả về đường dẫn ban đầu.
   }; 
   /**
    * @info Hàm `getLocalizedString` dùng để lấy chuỗi dịch dựa trên khóa và thực hiện thay thế giá trị nếu cần.

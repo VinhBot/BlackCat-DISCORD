@@ -1,8 +1,10 @@
-import { Client as BlackCatClient, Discord, chalk as colors } from "blackcat.js";
+import { Discord, chalk as colors } from "blackcat.js";
 import mongoose from "mongoose";
 
 import dataModel from "./Schema/defaultData.js";
 import config from "../config.js";
+
+import BlackCatClient from "../blackcat.js";
 
 export default class Client extends BlackCatClient {
   constructor() {
@@ -28,10 +30,10 @@ export default class Client extends BlackCatClient {
       config: config,
       // bảng điều khiển tùy chỉnh lệnh
       commandHandler: {
-        prefixCommand: false, // bật hoặc tắt lệnh đang chạy với prefix
+        setCurrentLanguage: "vi", // ngôn ngữ tùy chỉnh của gói. Hiện tại chỉ hỗ trợ 2 ngôn ngữ: vi: Tiếng Việt và en: Tiếng Anh
+        prefixCommand: true, // bật hoặc tắt lệnh đang chạy với prefix
         slashCommand: false, // bật hoặc tắt lệnh slash
-        setLanguage: "vi", // ngôn ngữ tùy chỉnh của gói. Hiện tại chỉ hỗ trợ 2 ngôn ngữ: vi: Tiếng Việt và en: Tiếng Anh
-        path: {
+        pathToCommand: {
           prefixCommand: "./Commands/PrefixCommands", // path to prefix commands
           slashCommand: "./Commands/SlashCommands", // path to slash commands
         },

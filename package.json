@@ -23,6 +23,7 @@
     "currency-system": "^2.8.9",
     "discord-giveaways": "^6.0.1",
     "distube": "^4.1.1",
+    "dotenv": "^16.4.1",
     "ffmpeg-static": "^5.2.0",
     "libsodium-wrappers": "^0.7.13",
     "lyrics-finder": "^21.7.0",
